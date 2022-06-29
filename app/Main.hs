@@ -33,11 +33,25 @@ showRows xs = unwords . intersperse "\n" $ map show xs
 getFileMeta :: FilePath -> IO FileMeta
 getFileMeta p = FileMeta p <$> getPermissions p <*> getFileSize p
 
-showDir :: FilePath -> IO [FileMeta]
-showDir dir = listDirectory dir >>= mapM getFileMeta
+showDir :: FilePath -> IO String
+showDir dir = listDirectory dir >>= mapM getFileMeta >>= f
+  where
+    f = pure . showRows
 
 catFile :: FilePath -> IO String
 catFile fname = undefined
+
+cmdTable :: [(String, FilePath -> IO String)]
+cmdTable =
+    [ ("ls", showDir)
+    , ("cat", catFile)
+    ]
+
+cmdLookup :: String -> Maybe (FilePath -> IO String)
+cmdLookup cmdText = lookup cmdText cmdTable
+
+trim :: String -> String
+trim = unwords . words
 
 main :: IO ()
 main = withSocketsDo $ do
@@ -48,5 +62,13 @@ main = withSocketsDo $ do
       send socket $ UTF8.fromString "Welcome to Hunkemoeller"
       forever $ do
         received <- fromMaybe "" <$> recv socket 1024
-        putStrLn $ Char8.unpack received
-        send socket $ UTF8.fromString "OK\n"
+        let
+          cmdText = Char8.unpack received
+          maybeCmd = cmdLookup $ trim cmdText
+        case maybeCmd of
+          Just cmd -> do
+            putStrLn cmdText
+            output <- cmd "/Users/khanhhua/dev/hunkemoeller"
+            send socket $ UTF8.fromString output
+          _ -> do
+            send socket $ UTF8.fromString "Error\n"
